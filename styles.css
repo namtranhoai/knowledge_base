@@ -268,12 +268,3 @@ a {
     grid-template-columns: 1fr;
   }
 }
-
-
-#chart3d {
-  width: 100%;
-  height: auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-}

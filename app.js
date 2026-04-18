@@ -1,18 +1,12 @@
-import {
-  clamp,
-  extractKeywords,
-  get3DChartRows,
-  normalize,
-  rankPages,
-  scorePageQuality,
-  summarize,
-  tokenize,
-} from "./core.js";
-
-const STORAGE_KEY = "llm-wiki-app-state-v4";
+const STORAGE_KEY = "llm-wiki-app-state-v3";
 const THEME_KEY = "llm-wiki-theme";
 
-const defaultState = { sources: [], pages: [], log: [] };
+const defaultState = {
+  sources: [],
+  pages: [],
+  log: [],
+};
+
 const state = loadState();
 
 const el = {
@@ -24,9 +18,6 @@ const el = {
   queryInput: document.getElementById("query-input"),
   topK: document.getElementById("top-k"),
   queryMode: document.getElementById("query-mode"),
-  chartMetric: document.getElementById("chart-metric"),
-  chartLimit: document.getElementById("chart-limit"),
-  chart3d: document.getElementById("chart3d"),
   answer: document.getElementById("answer"),
   queryExplain: document.getElementById("query-explain"),
   stats: document.getElementById("stats"),
@@ -58,14 +49,13 @@ function bootstrap() {
   el.clearBtn.addEventListener("click", onClearAll);
   el.seedBtn.addEventListener("click", onSeedDemo);
   el.themeBtn.addEventListener("click", toggleTheme);
-  el.chartMetric.addEventListener("change", render3DChart);
-  el.chartLimit.addEventListener("input", render3DChart);
 
   render();
 }
 
 function onIngest(event) {
   event.preventDefault();
+
   const title = el.sourceTitle.value.trim();
   const content = el.sourceContent.value.trim();
   const url = el.sourceUrl.value.trim();
@@ -82,10 +72,11 @@ function onIngest(event) {
 
   const page = synthesizePage(source);
   upsertPage(page);
-  state.sources.push(source);
 
+  state.sources.push(source);
   appendLog("ingest", `Ingest nguồn: ${title}`);
   saveState();
+
   el.sourceForm.reset();
   render();
 }
@@ -107,14 +98,16 @@ function onQuery(event) {
 }
 
 function onExport() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const payload = JSON.stringify(state, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
   const url = URL.createObjectURL(blob);
+
   const a = document.createElement("a");
   a.href = url;
   a.download = `llm-wiki-backup-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
-  URL.revokeObjectURL(url);
 
+  URL.revokeObjectURL(url);
   appendLog("backup", "Export dữ liệu JSON");
   saveState();
   renderLog();
@@ -131,9 +124,11 @@ function onImport(event) {
       if (!incoming || !Array.isArray(incoming.pages) || !Array.isArray(incoming.sources)) {
         throw new Error("invalid_payload");
       }
+
       state.pages = incoming.pages;
       state.sources = incoming.sources;
       state.log = Array.isArray(incoming.log) ? incoming.log : [];
+
       appendLog("restore", `Import backup thành công: ${file.name}`);
       saveState();
       render();
@@ -143,22 +138,27 @@ function onImport(event) {
       el.importInput.value = "";
     }
   };
+
   reader.readAsText(file);
 }
 
 function onClearAll() {
-  if (!confirm("Bạn chắc chắn muốn xóa toàn bộ dữ liệu wiki?")) return;
+  const ok = confirm("Bạn chắc chắn muốn xóa toàn bộ dữ liệu wiki?");
+  if (!ok) return;
+
   state.sources = [];
   state.pages = [];
   state.log = [];
+
   appendLog("reset", "Xóa toàn bộ dữ liệu");
   saveState();
   render();
 }
 
 function onSeedDemo() {
-  if (state.sources.length > 0 && !confirm("Đã có dữ liệu. Bạn vẫn muốn nạp thêm demo data?")) {
-    return;
+  if (state.sources.length > 0 || state.pages.length > 0) {
+    const proceed = confirm("Đã có dữ liệu. Bạn vẫn muốn nạp thêm demo data?");
+    if (!proceed) return;
   }
 
   const demo = [
@@ -203,6 +203,7 @@ function onSeedDemo() {
 function synthesizePage(source) {
   const summary = summarize(source.content);
   const keywords = extractKeywords(source.content);
+
   return {
     id: `page-${crypto.randomUUID()}`,
     sourceId: source.id,
@@ -215,23 +216,116 @@ function synthesizePage(source) {
 }
 
 function upsertPage(page) {
-  const idx = state.pages.findIndex((p) => normalize(p.title) === normalize(page.title));
-  if (idx >= 0) {
-    state.pages[idx] = { ...state.pages[idx], ...page, id: state.pages[idx].id, updatedAt: isoNow() };
+  const existing = state.pages.findIndex(
+    (p) => normalize(p.title) === normalize(page.title)
+  );
+
+  if (existing >= 0) {
+    state.pages[existing] = {
+      ...state.pages[existing],
+      ...page,
+      id: state.pages[existing].id,
+      updatedAt: isoNow(),
+    };
     appendLog("merge", `Hợp nhất page trùng tiêu đề: ${page.title}`);
     return;
   }
+
   state.pages.push(page);
 }
 
-function answerQuestion(question, topK, mode) {
-  const { queryTokens, scored } = rankPages({
-    pages: state.pages,
-    sources: state.sources,
-    question,
-    mode,
-    topK,
-  });
+function summarize(text) {
+  const compact = text.replace(/\s+/g, " ").trim();
+  const sentences = compact
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (sentences.length <= 2) return compact.slice(0, 420);
+
+  const first = sentences.slice(0, 2);
+  const best = mostInformativeSentence(sentences);
+  const combined = [...new Set([...first, best])].join(" ");
+  return combined.slice(0, 420);
+}
+
+function mostInformativeSentence(sentences) {
+  let winner = "";
+  let max = -Infinity;
+
+  for (const sentence of sentences) {
+    const words = tokenize(sentence).filter((w) => w.length > 4);
+    const score = new Set(words).size + Math.min(sentence.length / 60, 3);
+    if (score > max) {
+      max = score;
+      winner = sentence;
+    }
+  }
+
+  return winner;
+}
+
+function extractKeywords(text) {
+  const stopwords = new Set([
+    "và", "là", "của", "cho", "một", "những", "các", "this", "that", "with", "from",
+    "được", "trong", "này", "đó", "đang", "rằng", "thì", "khi", "nên", "cũng", "như",
+    "the", "and", "for", "are", "was", "have", "has", "into", "you", "your", "what",
+  ]);
+
+  const freq = new Map();
+  const words = tokenize(text).filter((w) => w.length > 3 && !stopwords.has(w));
+
+  for (const word of words) {
+    freq.set(word, (freq.get(word) || 0) + 1);
+  }
+
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([word]) => word);
+}
+
+function scorePageQuality(summary, keywords) {
+  return clamp(Math.round(summary.length / 12 + keywords.length * 5), 1, 100);
+}
+
+function answerQuestion(question, topK, mode = "balanced") {
+  const queryTokens = tokenize(question);
+  const strict = mode === "strict";
+
+  const scored = state.pages
+    .map((page) => {
+      const titleTokens = tokenize(page.title);
+      const summaryTokens = tokenize(page.summary);
+      const keywordTokens = page.keywords.map((k) => normalize(k));
+
+      let score = 0;
+      const explainParts = [];
+
+      for (const token of queryTokens) {
+        let tokenScore = 0;
+        if (titleTokens.includes(token)) tokenScore += strict ? 8 : 6;
+        if (summaryTokens.includes(token)) tokenScore += strict ? 2 : 3;
+        if (keywordTokens.some((k) => k.includes(token))) tokenScore += strict ? 10 : 8;
+
+        if (tokenScore > 0) explainParts.push(`${token}:${tokenScore}`);
+        score += tokenScore;
+      }
+
+      if (strict && queryTokens.length > 0) {
+        const matched = explainParts.length;
+        const ratio = matched / queryTokens.length;
+        if (ratio < 0.4) score = 0;
+      }
+
+      score += Math.round((page.quality || 0) / 20);
+
+      const source = state.sources.find((s) => s.id === page.sourceId);
+      return { page, source, score, explain: explainParts.join(", ") || "no token match" };
+    })
+    .filter((it) => it.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
 
   if (scored.length === 0) {
     return {
@@ -247,24 +341,29 @@ function answerQuestion(question, topK, mode) {
       const confidence = Math.round((score / maxScore) * 100);
       const citation = source?.url
         ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(source.title)}</a>`
-        : escapeHtml(source?.title || "Nguồn nội bộ");
+        : `${escapeHtml(source?.title || "Nguồn nội bộ")}`;
 
-      return `<li><strong>${idx + 1}. ${escapeHtml(page.title)}</strong><br>${escapeHtml(
-        page.summary
-      )}<br><em>Độ phù hợp: ${confidence}% | Quality: ${page.quality} | Keywords: ${escapeHtml(
-        page.keywords.join(", ")
-      )}</em><br><small>Nguồn: ${citation}</small></li>`;
+      return `<li>
+        <strong>${idx + 1}. ${escapeHtml(page.title)}</strong><br>
+        ${escapeHtml(page.summary)}<br>
+        <em>Độ phù hợp: ${confidence}% | Quality: ${page.quality} | Keywords: ${escapeHtml(
+          page.keywords.join(", ")
+        )}</em><br>
+        <small>Nguồn: ${citation}</small>
+      </li>`;
     })
     .join("");
+
+  const explain = [
+    `query_tokens=${queryTokens.join(", ")}`,
+    `mode=${mode}`,
+    ...scored.map((item, i) => `${i + 1}. ${item.page.title} => ${item.explain} | score=${item.score}`),
+  ].join("\n");
 
   return {
     html: `<p>Kết quả tổng hợp từ wiki:</p><ol>${items}</ol>`,
     hits: scored.length,
-    explain: [
-      `query_tokens=${queryTokens.join(", ")}`,
-      `mode=${mode}`,
-      ...scored.map((it, i) => `${i + 1}. ${it.page.title} => ${it.explain} | score=${it.score}`),
-    ].join("\n"),
+    explain,
   };
 }
 
@@ -273,46 +372,54 @@ function render() {
   renderIndex();
   renderPages();
   renderClusters();
-  render3DChart();
   renderGraph();
   renderSources();
   renderLog();
 }
 
 function renderStats() {
-  const avgQuality = state.pages.length
-    ? Math.round(state.pages.reduce((sum, p) => sum + (p.quality || 0), 0) / state.pages.length)
-    : 0;
+  const sourceCount = state.sources.length;
+  const pageCount = state.pages.length;
+  const keywordPool = new Set(state.pages.flatMap((p) => p.keywords));
+  const avgQuality =
+    pageCount === 0
+      ? 0
+      : Math.round(state.pages.reduce((sum, p) => sum + (p.quality || 0), 0) / pageCount);
 
   el.stats.innerHTML = `
-    <div><strong>${state.sources.length}</strong><span>nguồn</span></div>
-    <div><strong>${state.pages.length}</strong><span>wiki pages</span></div>
-    <div><strong>${new Set(state.pages.flatMap((p) => p.keywords)).size}</strong><span>keywords unique</span></div>
+    <div><strong>${sourceCount}</strong><span>nguồn</span></div>
+    <div><strong>${pageCount}</strong><span>wiki pages</span></div>
+    <div><strong>${keywordPool.size}</strong><span>keywords unique</span></div>
     <div><strong>${avgQuality}</strong><span>avg quality</span></div>
   `;
 }
 
 function renderIndex() {
   const key = normalize(el.filter.value.trim());
-  const filtered = state.pages.filter((p) =>
-    !key ? true : normalize(`${p.title} ${p.summary} ${p.keywords.join(" ")}`).includes(key)
-  );
+  const filtered = state.pages.filter((page) => {
+    if (!key) return true;
+    return normalize(`${page.title} ${page.summary} ${page.keywords.join(" ")}`).includes(key);
+  });
 
-  el.indexList.innerHTML = filtered.length
-    ? filtered
-        .map(
-          (page, i) =>
-            `<li><strong>${i + 1}. ${escapeHtml(page.title)}</strong> — ${escapeHtml(
-              page.summary.slice(0, 110)
-            )}${page.summary.length > 110 ? "..." : ""}</li>`
-        )
-        .join("")
-    : "<li>Không có page phù hợp.</li>";
+  el.indexList.innerHTML = "";
+  if (filtered.length === 0) {
+    el.indexList.innerHTML = "<li>Không có page phù hợp.</li>";
+    return;
+  }
+
+  filtered.forEach((page, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${i + 1}. ${escapeHtml(page.title)}</strong> — ${escapeHtml(
+      page.summary.slice(0, 110)
+    )}${page.summary.length > 110 ? "..." : ""}`;
+    el.indexList.appendChild(li);
+  });
 }
 
 function renderPages() {
   el.pages.innerHTML = "";
-  if (!state.pages.length) {
+
+  if (state.pages.length === 0) {
     el.pages.innerHTML = "<p class='muted'>Chưa có page nào.</p>";
     return;
   }
@@ -341,80 +448,35 @@ function renderPages() {
       node.querySelector(".delete-btn").addEventListener("click", () => deletePage(page.id));
       node.querySelector(".regenerate-btn").addEventListener("click", () => regeneratePage(page.id));
       node.querySelector(".edit-btn").addEventListener("click", () => editPage(page.id));
+
       el.pages.appendChild(node);
     });
 }
 
 function renderClusters() {
-  if (!state.pages.length) {
+  if (state.pages.length === 0) {
     el.clusters.innerHTML = "<p class='muted'>Chưa có dữ liệu cụm chủ đề.</p>";
     return;
   }
 
-  const map = new Map();
+  const clusterMap = new Map();
   for (const page of state.pages) {
     const key = page.keywords[0] || "uncategorized";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(page.title);
+    if (!clusterMap.has(key)) clusterMap.set(key, []);
+    clusterMap.get(key).push(page.title);
   }
 
-  el.clusters.innerHTML = [...map.entries()]
+  const blocks = [...clusterMap.entries()]
     .sort((a, b) => b[1].length - a[1].length)
     .map(
-      ([topic, titles]) =>
-        `<div class="cluster"><strong>${escapeHtml(topic)}</strong> (${titles.length})<ul>${titles
-          .map((t) => `<li>${escapeHtml(t)}</li>`)
-          .join("")}</ul></div>`
+      ([topic, titles]) => `<div class="cluster">
+        <strong>${escapeHtml(topic)}</strong> (${titles.length})
+        <ul>${titles.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
+      </div>`
     )
     .join("");
-}
 
-function render3DChart() {
-  const canvas = el.chart3d;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const metric = el.chartMetric.value;
-  const limit = clamp(Number(el.chartLimit.value) || 8, 3, 20);
-  const rows = get3DChartRows({ pages: state.pages, sources: state.sources, metric, limit });
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = getCssVar("--surface");
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  if (!rows.length) {
-    ctx.fillStyle = getCssVar("--muted");
-    ctx.font = "16px sans-serif";
-    ctx.fillText("Chưa có dữ liệu để vẽ 3D chart.", 28, 40);
-    return;
-  }
-
-  const maxValue = Math.max(...rows.map((r) => r.value), 1);
-  const baseY = canvas.height - 65;
-  const barW = Math.min(72, Math.floor((canvas.width - 120) / rows.length) - 8);
-  const depth = 16;
-
-  rows.forEach((row, idx) => {
-    const x = 40 + idx * (barW + 14);
-    const h = Math.max(8, Math.round((row.value / maxValue) * 250));
-    drawBar3D(ctx, x, baseY, barW, h, depth, colorByIndex(idx));
-
-    ctx.fillStyle = getCssVar("--text");
-    ctx.font = "12px sans-serif";
-    ctx.fillText(String(row.value), x + 4, baseY - h - depth - 8);
-
-    ctx.save();
-    ctx.translate(x + 2, baseY + 12);
-    ctx.rotate(-0.15);
-    ctx.fillStyle = getCssVar("--muted");
-    const label = row.title.slice(0, 12) + (row.title.length > 12 ? "…" : "");
-    ctx.fillText(label, 0, 0);
-    ctx.restore();
-  });
-
-  ctx.fillStyle = getCssVar("--text");
-  ctx.font = "13px sans-serif";
-  ctx.fillText(`3D metric: ${metric} | max=${maxValue} | items=${rows.length}`, 24, 24);
+  el.clusters.innerHTML = blocks;
 }
 
 function renderGraph() {
@@ -433,26 +495,33 @@ function renderGraph() {
     }
   }
 
-  el.graph.innerHTML = links.length
-    ? links
-        .map(
-          (link) =>
-            `<div class="edge"><strong>${escapeHtml(link.a)}</strong> ↔ <strong>${escapeHtml(
-              link.b
-            )}</strong><br><small>Shared: ${escapeHtml(link.shared.join(", "))}</small></div>`
-        )
-        .join("")
-    : "<p class='muted'>Chưa có keywords chung giữa các page.</p>";
+  if (links.length === 0) {
+    el.graph.innerHTML = "<p class='muted'>Chưa có keywords chung giữa các page.</p>";
+    return;
+  }
+
+  el.graph.innerHTML = links
+    .map(
+      (link) => `<div class="edge"><strong>${escapeHtml(link.a)}</strong> ↔ <strong>${escapeHtml(
+        link.b
+      )}</strong><br><small>Shared: ${escapeHtml(link.shared.join(", "))}</small></div>`
+    )
+    .join("");
 }
 
 function renderSources() {
-  if (!state.sources.length) {
+  if (state.sources.length === 0) {
     el.sources.innerHTML = "<p class='muted'>Chưa có nguồn nào.</p>";
     return;
   }
 
   el.sources.innerHTML = `
-    <table class="source-table"><thead><tr><th>Title</th><th>URL</th><th>Size</th><th>Created</th></tr></thead>
+    <table class="source-table">
+      <thead>
+        <tr>
+          <th>Title</th><th>URL</th><th>Size</th><th>Created</th>
+        </tr>
+      </thead>
       <tbody>
         ${state.sources
           .slice()
@@ -471,16 +540,22 @@ function renderSources() {
           )
           .join("")}
       </tbody>
-    </table>`;
+    </table>
+  `;
 }
 
 function renderLog() {
-  el.log.textContent = state.log.length ? [...state.log].reverse().join("\n") : "Chưa có hoạt động.";
+  if (state.log.length === 0) {
+    el.log.textContent = "Chưa có hoạt động.";
+    return;
+  }
+  el.log.textContent = [...state.log].reverse().join("\n");
 }
 
 function deletePage(pageId) {
   const target = state.pages.find((p) => p.id === pageId);
   if (!target) return;
+
   state.pages = state.pages.filter((p) => p.id !== pageId);
   appendLog("delete", `Xóa page: ${target.title}`);
   saveState();
@@ -490,6 +565,7 @@ function deletePage(pageId) {
 function regeneratePage(pageId) {
   const page = state.pages.find((p) => p.id === pageId);
   if (!page) return;
+
   const source = state.sources.find((s) => s.id === page.sourceId);
   if (!source) return;
 
@@ -509,11 +585,11 @@ function editPage(pageId) {
 
   const newSummary = prompt("Sửa summary", page.summary);
   if (newSummary === null) return;
-  const raw = prompt("Sửa keywords (phân tách bằng dấu phẩy)", page.keywords.join(", "));
-  if (raw === null) return;
+  const newKeywordsRaw = prompt("Sửa keywords (phân tách bằng dấu phẩy)", page.keywords.join(", "));
+  if (newKeywordsRaw === null) return;
 
   page.summary = newSummary.trim() || page.summary;
-  page.keywords = raw
+  page.keywords = newKeywordsRaw
     .split(",")
     .map((k) => normalize(k).trim())
     .filter(Boolean)
@@ -530,6 +606,7 @@ function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return structuredClone(defaultState);
+
     const parsed = JSON.parse(raw);
     return {
       sources: Array.isArray(parsed.sources) ? parsed.sources : [],
@@ -550,11 +627,13 @@ function appendLog(action, detail) {
 }
 
 function applySavedTheme() {
-  setTheme(localStorage.getItem(THEME_KEY) || "light");
+  const saved = localStorage.getItem(THEME_KEY) || "light";
+  setTheme(saved);
 }
 
 function toggleTheme() {
-  const next = document.body.dataset.theme === "dark" ? "light" : "dark";
+  const current = document.body.dataset.theme === "dark" ? "dark" : "light";
+  const next = current === "dark" ? "light" : "dark";
   setTheme(next);
   localStorage.setItem(THEME_KEY, next);
 }
@@ -564,48 +643,29 @@ function setTheme(theme) {
   el.themeBtn.textContent = theme === "dark" ? "Light mode" : "Dark mode";
 }
 
-function drawBar3D(ctx, x, baseY, width, height, depth, color) {
-  ctx.fillStyle = color.front;
-  ctx.fillRect(x, baseY - height, width, height);
-
-  ctx.beginPath();
-  ctx.moveTo(x, baseY - height);
-  ctx.lineTo(x + depth, baseY - height - depth);
-  ctx.lineTo(x + width + depth, baseY - height - depth);
-  ctx.lineTo(x + width, baseY - height);
-  ctx.closePath();
-  ctx.fillStyle = color.top;
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(x + width, baseY - height);
-  ctx.lineTo(x + width + depth, baseY - height - depth);
-  ctx.lineTo(x + width + depth, baseY - depth);
-  ctx.lineTo(x + width, baseY);
-  ctx.closePath();
-  ctx.fillStyle = color.side;
-  ctx.fill();
-}
-
-function colorByIndex(idx) {
-  const palette = [
-    ["#4f8cff", "#86adff", "#2f69db"],
-    ["#33b679", "#7fdcb2", "#25885a"],
-    ["#ff8a47", "#ffb07c", "#dd6723"],
-    ["#c084fc", "#ddb9ff", "#8f5bd1"],
-    ["#ff5e57", "#ff908c", "#cc3f39"],
-  ];
-  const [front, top, side] = palette[idx % palette.length];
-  return { front, top, side };
-}
-
-function getCssVar(name) {
-  return getComputedStyle(document.body).getPropertyValue(name).trim() || "#999";
-}
-
 function formatDate(input) {
   const value = new Date(input);
-  return Number.isFinite(value.getTime()) ? value.toLocaleString("vi-VN") : "-";
+  if (!Number.isFinite(value.getTime())) return "-";
+  return value.toLocaleString("vi-VN");
+}
+
+function normalize(text) {
+  return String(text)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function tokenize(text) {
+  return normalize(text)
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+}
+
+function clamp(number, min, max) {
+  return Math.max(min, Math.min(max, number));
 }
 
 function isoNow() {
@@ -620,6 +680,3 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
-// exposed for quick manual debugging in browser console
-window.__wikiDev = { state, tokenize, summarize, extractKeywords, rankPages };
