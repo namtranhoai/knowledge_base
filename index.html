@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Wiki App Ultra</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="container">
+      <div>
+        <h1>LLM Wiki Web App Ultra</h1>
+        <p>
+          Bản nâng cấp tiếp theo: quản trị tri thức sâu hơn, truy vấn có explain,
+          gom cụm chủ đề và theo dõi nguồn dữ liệu chi tiết.
+        </p>
+      </div>
+      <div class="header-actions">
+        <button id="seed-btn" class="secondary">Nạp demo data</button>
+        <button id="theme-btn" class="secondary">Dark mode</button>
+        <button id="export-btn" class="secondary">Export JSON</button>
+        <label class="file-input">
+          Import JSON
+          <input id="import-input" type="file" accept="application/json" />
+        </label>
+        <button id="clear-btn" class="danger">Xóa dữ liệu</button>
+      </div>
+    </header>
+
+    <main class="container grid">
+      <section class="card">
+        <h2>1) Ingest nguồn</h2>
+        <form id="source-form">
+          <label>
+            Tiêu đề
+            <input id="source-title" required placeholder="Ví dụ: Agentic RAG in Production" />
+          </label>
+          <label>
+            URL (tuỳ chọn)
+            <input id="source-url" type="url" placeholder="https://..." />
+          </label>
+          <label>
+            Nội dung thô
+            <textarea id="source-content" required rows="8" placeholder="Dán markdown/text"></textarea>
+          </label>
+          <button type="submit">Ingest</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>2) Hỏi đáp trên wiki</h2>
+        <form id="query-form">
+          <label>
+            Câu hỏi
+            <input id="query-input" required placeholder="Các thực hành tốt để eval agent?" />
+          </label>
+          <div class="inline-grid">
+            <label>
+              Top-k
+              <input id="top-k" type="number" min="1" max="10" value="3" />
+            </label>
+            <label>
+              Query mode
+              <select id="query-mode">
+                <option value="balanced">Balanced</option>
+                <option value="strict">Strict</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit">Trả lời</button>
+        </form>
+        <article id="answer" class="output muted">Chưa có câu trả lời.</article>
+        <details>
+          <summary>Query explain</summary>
+          <pre id="query-explain">Chưa có explain.</pre>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>Thống kê</h2>
+        <div id="stats" class="stats"></div>
+      </section>
+
+      <section class="card">
+        <h2>Lọc wiki</h2>
+        <input id="page-filter" placeholder="Lọc theo title/summary/keyword" />
+        <ul id="index-list"></ul>
+      </section>
+
+      <section class="card full">
+        <h2>Wiki pages</h2>
+        <div id="pages"></div>
+      </section>
+
+
+      <section class="card full">
+        <h2>3D Charts</h2>
+        <div class="inline-grid">
+          <label>
+            Metric
+            <select id="chart-metric">
+              <option value="quality">Page quality</option>
+              <option value="keywords">Keyword count</option>
+              <option value="source_length">Source length</option>
+            </select>
+          </label>
+          <label>
+            Hiển thị tối đa
+            <input id="chart-limit" type="number" min="3" max="20" value="8" />
+          </label>
+        </div>
+        <canvas id="chart3d" width="1080" height="420" aria-label="3D chart"></canvas>
+        <p class="muted">Biểu đồ cột giả lập 3D bằng canvas (isometric projection) theo từng wiki page.</p>
+      </section>
+
+      <section class="card full">
+        <h2>Topic clusters</h2>
+        <div id="clusters" class="clusters"></div>
+      </section>
+
+      <section class="card full">
+        <h2>Knowledge Graph</h2>
+        <div id="graph" class="graph"></div>
+      </section>
+
+      <section class="card full">
+        <h2>Sources</h2>
+        <div id="sources"></div>
+      </section>
+
+      <section class="card full">
+        <h2>Activity Log</h2>
+        <pre id="log"></pre>
+      </section>
+    </main>
+
+    <template id="page-template">
+      <article class="page-item">
+        <div class="page-head">
+          <h3 class="page-title"></h3>
+          <div class="actions">
+            <button class="secondary small edit-btn">Edit</button>
+            <button class="secondary small regenerate-btn">Regenerate</button>
+            <button class="danger small delete-btn">Delete</button>
+          </div>
+        </div>
+        <p class="page-summary"></p>
+        <p><strong>Keywords:</strong> <span class="page-keywords"></span></p>
+        <p>
+          <strong>Nguồn:</strong>
+          <a class="page-source-link" target="_blank" rel="noreferrer noopener"></a>
+          <span class="page-source-fallback"></span>
+        </p>
+        <small class="page-updated"></small>
+      </article>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
