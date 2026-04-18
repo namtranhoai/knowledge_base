@@ -83,37 +83,13 @@
 
       <section class="card">
         <h2>Lọc wiki</h2>
-        <div class="inline-grid">
-          <input id="page-filter" placeholder="Lọc theo title/summary/keyword" />
-          <label class="check-row"><input id="pinned-only" type="checkbox" /> Chỉ hiện pinned</label>
-        </div>
+        <input id="page-filter" placeholder="Lọc theo title/summary/keyword" />
         <ul id="index-list"></ul>
       </section>
 
       <section class="card full">
         <h2>Wiki pages</h2>
         <div id="pages"></div>
-      </section>
-
-
-      <section class="card full">
-        <h2>3D Charts</h2>
-        <div class="inline-grid">
-          <label>
-            Metric
-            <select id="chart-metric">
-              <option value="quality">Page quality</option>
-              <option value="keywords">Keyword count</option>
-              <option value="source_length">Source length</option>
-            </select>
-          </label>
-          <label>
-            Hiển thị tối đa
-            <input id="chart-limit" type="number" min="3" max="20" value="8" />
-          </label>
-        </div>
-        <canvas id="chart3d" width="1080" height="420" aria-label="3D chart"></canvas>
-        <p class="muted">Biểu đồ cột giả lập 3D bằng canvas (isometric projection) theo từng wiki page.</p>
       </section>
 
       <section class="card full">
@@ -142,8 +118,6 @@
         <div class="page-head">
           <h3 class="page-title"></h3>
           <div class="actions">
-            <button class="secondary small pin-btn">Pin</button>
-            <button class="secondary small history-btn">History</button>
             <button class="secondary small edit-btn">Edit</button>
             <button class="secondary small regenerate-btn">Regenerate</button>
             <button class="danger small delete-btn">Delete</button>
@@ -160,6 +134,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>

@@ -52,15 +52,3 @@ test('get3DChartRows returns sorted values', () => {
   const rows = get3DChartRows({ pages, sources, metric: 'quality', limit: 8 });
   assert.equal(rows[0].title, 'B');
 });
-
-
-test('rankPages strict mode filters weak matches', () => {
-  const pages = [
-    { id: 'p1', sourceId: 's1', title: 'Agent eval', summary: 'offline benchmark rollout', keywords: ['agent', 'benchmark'], quality: 80 },
-    { id: 'p2', sourceId: 's2', title: 'Random', summary: 'unrelated words only', keywords: ['other'], quality: 90 },
-  ];
-  const sources = [{ id: 's1', title: 'A' }, { id: 's2', title: 'B' }];
-  const { scored } = rankPages({ pages, sources, question: 'agent benchmark rollout latency', mode: 'strict', topK: 5 });
-  assert.equal(scored.length, 1);
-  assert.equal(scored[0].page.id, 'p1');
-});

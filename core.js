@@ -79,7 +79,6 @@ export function rankPages({ pages, sources, question, mode = "balanced", topK = 
       const keywordTokens = page.keywords.map((k) => normalize(k));
 
       let score = 0;
-      let matchedTokens = 0;
       const explainParts = [];
 
       for (const token of queryTokens) {
@@ -88,10 +87,7 @@ export function rankPages({ pages, sources, question, mode = "balanced", topK = 
         if (summaryTokens.includes(token)) tokenScore += strict ? 2 : 3;
         if (keywordTokens.some((k) => k.includes(token))) tokenScore += strict ? 10 : 8;
 
-        if (tokenScore > 0) {
-          explainParts.push(`${token}:${tokenScore}`);
-          matchedTokens += 1;
-        }
+        if (tokenScore > 0) explainParts.push(`${token}:${tokenScore}`);
         score += tokenScore;
       }
 
@@ -100,8 +96,7 @@ export function rankPages({ pages, sources, question, mode = "balanced", topK = 
         if (ratio < 0.4) score = 0;
       }
 
-      if (queryTokens.length > 0 && matchedTokens === 0) score = 0;
-      if (score > 0) score += Math.round((page.quality || 0) / 20);
+      score += Math.round((page.quality || 0) / 20);
       const source = sources.find((s) => s.id === page.sourceId);
       return { page, source, score, explain: explainParts.join(", ") || "no token match" };
     })

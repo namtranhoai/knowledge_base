@@ -268,26 +268,3 @@ a {
     grid-template-columns: 1fr;
   }
 }
-
-
-#chart3d {
-  width: 100%;
-  height: auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
-  margin-top: 0.35rem;
-}
-
-.check-row input {
-  width: auto;
-  margin: 0;
-}
