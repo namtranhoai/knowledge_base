@@ -1,0 +1,8 @@
+{
+  "name": "llm-wiki-ultra",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test core.test.mjs"
+  }
+}
