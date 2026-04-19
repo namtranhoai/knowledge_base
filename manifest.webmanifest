@@ -1,0 +1,10 @@
+{
+  "name": "LLM Wiki Ultra",
+  "short_name": "WikiUltra",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f7fc",
+  "theme_color": "#1b4fa6",
+  "description": "Local-first LLM Wiki app with analytics, charts, and knowledge workflows.",
+  "icons": []
+}
